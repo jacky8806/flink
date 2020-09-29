@@ -48,6 +48,8 @@ import org.apache.flink.runtime.io.network.NettyShuffleEnvironmentBuilder;
 import org.apache.flink.runtime.io.network.api.writer.AvailabilityTestResultPartitionWriter;
 import org.apache.flink.runtime.io.network.api.writer.RecordWriter;
 import org.apache.flink.runtime.io.network.api.writer.ResultPartitionWriter;
+import org.apache.flink.runtime.io.network.partition.CheckpointedResultPartition;
+import org.apache.flink.runtime.io.network.partition.CheckpointedResultSubpartition;
 import org.apache.flink.runtime.io.network.partition.MockResultPartitionWriter;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionTest;
 import org.apache.flink.runtime.jobgraph.OperatorID;
@@ -62,6 +64,7 @@ import org.apache.flink.runtime.state.AbstractKeyedStateBackend;
 import org.apache.flink.runtime.state.AbstractStateBackend;
 import org.apache.flink.runtime.state.CheckpointListener;
 import org.apache.flink.runtime.state.CheckpointStreamFactory;
+import org.apache.flink.runtime.state.CheckpointableKeyedStateBackend;
 import org.apache.flink.runtime.state.DoneFuture;
 import org.apache.flink.runtime.state.KeyGroupRange;
 import org.apache.flink.runtime.state.KeyGroupStatePartitionStreamProvider;
@@ -708,7 +711,7 @@ public class StreamTaskTest extends TestLogger {
 
 		TaskStateManager taskStateManager = new TaskStateManagerImpl(
 			new JobID(1L, 2L),
-			new ExecutionAttemptID(1L, 2L),
+			new ExecutionAttemptID(),
 			mock(TaskLocalStateStoreImpl.class),
 			null,
 			checkpointResponder);
@@ -882,7 +885,7 @@ public class StreamTaskTest extends TestLogger {
 
 		TaskStateManager taskStateManager = new TaskStateManagerImpl(
 			new JobID(1L, 2L),
-			new ExecutionAttemptID(1L, 2L),
+			new ExecutionAttemptID(),
 			mock(TaskLocalStateStoreImpl.class),
 			null,
 			checkpointResponder);
@@ -1532,7 +1535,7 @@ public class StreamTaskTest extends TestLogger {
 			// Later it calls the `init()` method before actual `run()`, so we are overriding the operatorChain
 			// here for test purposes.
 			super.operatorChain = this.overrideOperatorChain;
-			super.headOperator = super.operatorChain.getHeadOperator();
+			super.mainOperator = super.operatorChain.getMainOperator();
 			super.inputProcessor = new EmptyInputProcessor(false);
 		}
 
@@ -1638,7 +1641,7 @@ public class StreamTaskTest extends TestLogger {
 					}
 
 					@Override
-					public AbstractKeyedStateBackend<?> keyedStateBackend() {
+					public CheckpointableKeyedStateBackend<?> keyedStateBackend() {
 						return controller.keyedStateBackend();
 					}
 
@@ -1699,7 +1702,7 @@ public class StreamTaskTest extends TestLogger {
 			checkTaskThreadInfo();
 
 			// Create a time trigger to validate that it would also be invoked in the task's thread.
-			getHeadOperator().getProcessingTimeService().registerTimer(0, new ProcessingTimeCallback() {
+			getMainOperator().getProcessingTimeService().registerTimer(0, new ProcessingTimeCallback() {
 				@Override
 				public void onProcessingTime(long timestamp) throws Exception {
 					checkTaskThreadInfo();
@@ -1986,10 +1989,15 @@ public class StreamTaskTest extends TestLogger {
 		}
 	}
 
-	private static class RecoveryResultPartition extends MockResultPartitionWriter {
+	private static class RecoveryResultPartition extends MockResultPartitionWriter implements CheckpointedResultPartition {
 		private boolean isStateRecovered;
 
 		RecoveryResultPartition() {
+		}
+
+		@Override
+		public CheckpointedResultSubpartition getCheckpointedSubpartition(int subpartitionIndex) {
+			throw new UnsupportedOperationException();
 		}
 
 		@Override

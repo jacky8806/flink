@@ -106,9 +106,11 @@ import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
 
+import java.io.IOException;
 import java.lang.reflect.Method;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -139,7 +141,7 @@ public class ExecutionContext<ClusterID> {
 
 	private final Environment environment;
 	private final SessionContext originalSessionContext;
-	private final ClassLoader classLoader;
+	private final URLClassLoader classLoader;
 
 	private final Configuration flinkConfig;
 	private final ClusterClientFactory<ClusterID> clusterClientFactory;
@@ -305,6 +307,11 @@ public class ExecutionContext<ClusterID> {
 	/** Close resources associated with this ExecutionContext, e.g. catalogs. */
 	public void close() {
 		wrapClassLoader(() -> getCatalogs().values().forEach(Catalog::close));
+		try {
+			classLoader.close();
+		} catch (IOException e) {
+			LOG.debug("Error while closing class loader.", e);
+		}
 	}
 
 	//------------------------------------------------------------------------------------------------------------------
@@ -543,7 +550,9 @@ public class ExecutionContext<ClusterID> {
 				Time.milliseconds(execution.getMinStateRetention()),
 				Time.milliseconds(execution.getMaxStateRetention()));
 
-		conf.set(CoreOptions.DEFAULT_PARALLELISM, execution.getParallelism());
+		if (execution.getParallelism().isPresent()) {
+			conf.set(CoreOptions.DEFAULT_PARALLELISM, execution.getParallelism().get());
+		}
 		conf.set(PipelineOptions.MAX_PARALLELISM, execution.getMaxParallelism());
 		conf.set(StreamPipelineOptions.TIME_CHARACTERISTIC, execution.getTimeCharacteristic());
 		if (execution.getTimeCharacteristic() == TimeCharacteristic.EventTime) {
